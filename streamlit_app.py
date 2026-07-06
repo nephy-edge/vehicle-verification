@@ -139,11 +139,16 @@ def verify_plate(session, plate_number, debug=False):
     return row
 
 
-def create_excel_output(rows, plates):
-    """Create Excel file from results."""
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Results"
+def create_excel_output(rows, plates, uploaded_file=None):
+    """Create or append results to Excel file."""
+    if uploaded_file:
+        # Load existing workbook and add results to new sheet
+        wb = openpyxl.load_workbook(uploaded_file)
+    else:
+        # Create new workbook
+        wb = openpyxl.Workbook()
+
+    ws = wb.create_sheet("Verification Results")
 
     # Write plate numbers in column A
     ws.cell(row=1, column=1, value="Plate Number")
@@ -181,6 +186,7 @@ if not TOKEN:
 input_method = st.radio("How do you want to input plates?", ["Single plate", "Upload Excel file"], horizontal=True)
 
 plates_to_verify = []
+source_file = None
 
 if input_method == "Single plate":
     plate_input = st.text_input("Enter plate number (e.g., F2X112)", placeholder="ABC123").strip().upper()
@@ -190,6 +196,7 @@ else:
     uploaded_file = st.file_uploader("Upload Excel file with plates in Column A", type=['xlsx'])
     if uploaded_file:
         try:
+            source_file = uploaded_file
             wb = openpyxl.load_workbook(uploaded_file)
             ws = wb.active
             for row in ws.iter_rows(min_row=2, values_only=True):
@@ -255,10 +262,16 @@ if plates_to_verify:
         col3.metric("Errors", errors)
 
         # Download button
-        excel_file = create_excel_output(results, plates_to_verify)
+        excel_file = create_excel_output(results, plates_to_verify, uploaded_file=source_file)
+
+        if source_file:
+            file_name = f"verified_{source_file.name.replace('.xlsx', '')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        else:
+            file_name = f"verification_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+
         st.download_button(
             label="📥 Download Excel Results",
             data=excel_file,
-            file_name=f"verification_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+            file_name=file_name,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
