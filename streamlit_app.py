@@ -193,18 +193,29 @@ if input_method == "Single plate":
     if plate_input:
         plates_to_verify = [plate_input.replace("-", "")]
 else:
-    uploaded_file = st.file_uploader("Upload Excel file with plates in Column A", type=['xlsx'])
+    uploaded_file = st.file_uploader("Upload Excel file with plates", type=['xlsx'])
     if uploaded_file:
         try:
             source_file = uploaded_file
             wb = openpyxl.load_workbook(uploaded_file)
             ws = wb.active
+
+            # Show preview and let user select column
+            preview_data = list(ws.iter_rows(min_row=1, max_row=5, values_only=True))
+            st.write("**Preview (first 5 rows):**")
+            st.dataframe(preview_data)
+
+            col_letter = st.selectbox("Select column with plate numbers",
+                                     ["A", "B", "C", "D", "E", "F"],
+                                     help="Choose the column containing plate numbers")
+            col_index = ord(col_letter) - ord('A')  # Convert A->0, B->1, C->2, etc.
+
             for row in ws.iter_rows(min_row=2, values_only=True):
-                if row and row[0]:
-                    plate = str(row[0]).strip().replace("-", "").upper()
+                if row and len(row) > col_index and row[col_index]:
+                    plate = str(row[col_index]).strip().replace("-", "").upper()
                     plates_to_verify.append(plate)
             wb.close()
-            st.success(f"✅ Loaded {len(plates_to_verify)} plates")
+            st.success(f"✅ Loaded {len(plates_to_verify)} plates from column {col_letter}")
         except Exception as e:
             st.error(f"Error reading file: {e}")
             st.stop()
