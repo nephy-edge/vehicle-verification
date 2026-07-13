@@ -34,11 +34,13 @@ load_dotenv()
 # Configuration
 TOKEN = os.environ.get('VERIFIK_TOKEN', '')
 AUTH_SCHEME = os.environ.get('VERIFIK_AUTH_SCHEME', 'Bearer')
+ZYLA_API_KEY = os.environ.get('ZYLA_API_KEY', '')
 REQUEST_TIMEOUT = 30
 DELAY_BETWEEN_CALLS = 0.5  # seconds
 
 COUNTRIES = {
     'Peru': 'pe',
+    'Mexico': 'mx',
     'Colombia': 'co',
     'Chile': 'cl',
     'Argentina': 'ar',
@@ -47,7 +49,26 @@ COUNTRIES = {
 }
 
 def get_api_url(country_code):
+    if country_code == 'mx':
+        return 'zyla'  # Special marker for Zyla API
     return f'https://api.verifik.co/v2/{country_code}/vehiculo/placa'
+
+def query_zyla_api(session, plate_number):
+    """Query Zyla API for Mexican vehicle info from REPUVE."""
+    url = "https://zylalabs.com/api/1779/mexican+vehicle+information+repuve+api/1424/get+data"
+
+    headers = {
+        'Authorization': f'Bearer {ZYLA_API_KEY}',
+        'Content-Type': 'application/json',
+    }
+
+    params = {'placa_niv': plate_number}
+
+    try:
+        resp = session.get(url, headers=headers, params=params, timeout=REQUEST_TIMEOUT, verify=False)
+        return resp
+    except requests.RequestException:
+        raise
 
 FIELDS = [
     ('Use', ['use', 'tipoUso']),
@@ -89,7 +110,7 @@ def get_session():
 
 
 def verify_plate(session, plate_number, api_url, debug=False):
-    """Query the Verifik API for a single plate."""
+    """Query the Verifik or Zyla API for a single plate."""
     row = {h: '' for h in HEADERS}
 
     if debug:
@@ -97,12 +118,17 @@ def verify_plate(session, plate_number, api_url, debug=False):
         st.write(f"**Debug:** API URL: `{api_url}`")
 
     try:
-        resp = session.get(
-            api_url,
-            params={'plate': plate_number},
-            timeout=REQUEST_TIMEOUT,
-            verify=False,
-        )
+        # Handle Zyla API (Mexico)
+        if api_url == 'zyla':
+            resp = query_zyla_api(session, plate_number)
+        else:
+            # Handle Verifik API
+            resp = session.get(
+                api_url,
+                params={'plate': plate_number},
+                timeout=REQUEST_TIMEOUT,
+                verify=False,
+            )
 
         if debug:
             st.write(f"**Debug:** API Status: {resp.status_code}")
@@ -127,7 +153,27 @@ def verify_plate(session, plate_number, api_url, debug=False):
 
     if resp.status_code == 200:
         res_json = resp.json() or {}
-        data = res_json.get('data', {})
+
+        # Handle Zyla response (direct data, no wrapper)
+        if api_url == 'zyla':
+            data = res_json
+            # Normalize Zyla field names to Verifik format
+            normalized_data = {
+                'Brand': data.get('marca', ''),
+                'Model': data.get('modelo', ''),
+                'Year': data.get('anioModelo', ''),
+                'Type': data.get('tipo', ''),
+                'Seats': data.get('asientos', ''),
+                'Engine Serial': data.get('numeroMotor', ''),
+                'Chassis Serial': data.get('numeroChasis', ''),
+                'Serial': data.get('numero', ''),
+                'Valid Format': 'Yes',
+                'Use': data.get('uso', ''),
+            }
+            data = normalized_data
+        else:
+            # Handle Verifik response
+            data = res_json.get('data', {})
 
         if debug:
             st.write(f"**Debug:** API Response: {data}")
@@ -149,8 +195,8 @@ def verify_plate(session, plate_number, api_url, debug=False):
     else:
         try:
             detail = resp.json().get('message') or resp.json().get('code') or resp.text[:40]
-        except ValueError:
-            detail = resp.text[:40]
+        except (ValueError, AttributeError):
+            detail = resp.text[:40] if hasattr(resp, 'text') else 'Unknown error'
         row['Result'] = f'HTTP {resp.status_code}'
 
     return row
@@ -226,10 +272,16 @@ if not TOKEN:
 selected_country = st.selectbox(
     "Select Country",
     options=list(COUNTRIES.keys()),
-    index=list(COUNTRIES.keys()).index('Peru'),
+    index=0,  # Default to Peru
     help="Choose the country to verify plates for"
 )
 country_code = COUNTRIES[selected_country]
+
+# Check if Mexico is selected and validate Zyla API key
+if country_code == 'mx' and not ZYLA_API_KEY:
+    st.error("❌ ZYLA_API_KEY environment variable not set. Please configure it to verify Mexican plates.")
+    st.stop()
+
 api_url = get_api_url(country_code)
 
 # Input method selection
