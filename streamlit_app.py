@@ -32,11 +32,27 @@ def load_dotenv(path='.env'):
 load_dotenv()
 
 # Configuration
-API_URL = 'https://api.verifik.co/v2/pe/vehiculo/placa'
 TOKEN = os.environ.get('VERIFIK_TOKEN', '')
 AUTH_SCHEME = os.environ.get('VERIFIK_AUTH_SCHEME', 'Bearer')
 REQUEST_TIMEOUT = 30
 DELAY_BETWEEN_CALLS = 0.5  # seconds
+
+COUNTRIES = {
+    'Argentina': 'ar',
+    'Bolivia': 'bo',
+    'Brazil': 'br',
+    'Chile': 'cl',
+    'Colombia': 'co',
+    'Costa Rica': 'cr',
+    'Ecuador': 'ec',
+    'Mexico': 'mx',
+    'Paraguay': 'py',
+    'Peru': 'pe',
+    'United States': 'us',
+}
+
+def get_api_url(country_code):
+    return f'https://api.verifik.co/v2/{country_code}/vehiculo/placa'
 
 FIELDS = [
     ('Use', ['use', 'tipoUso']),
@@ -77,7 +93,7 @@ def get_session():
     return session
 
 
-def verify_plate(session, plate_number, debug=False):
+def verify_plate(session, plate_number, api_url, debug=False):
     """Query the Verifik API for a single plate."""
     row = {h: '' for h in HEADERS}
 
@@ -86,7 +102,7 @@ def verify_plate(session, plate_number, debug=False):
 
     try:
         resp = session.get(
-            API_URL,
+            api_url,
             params={'plate': plate_number},
             timeout=REQUEST_TIMEOUT,
             verify=False,
@@ -173,14 +189,24 @@ def create_excel_output(rows, plates, uploaded_file=None):
     return excel_buffer
 
 
-st.set_page_config(page_title="Peru Plate Verification", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Vehicle Plate Verification", layout="wide", initial_sidebar_state="collapsed")
 
-st.title("🚗 Peru Vehicle Plate Verification")
+st.title("🚗 Vehicle Plate Verification")
 st.caption("Verify vehicle details using the Verifik API")
 
 if not TOKEN:
     st.error("❌ VERIFIK_TOKEN environment variable not set. Please configure it first.")
     st.stop()
+
+# Country selection
+selected_country = st.selectbox(
+    "Select Country",
+    options=list(COUNTRIES.keys()),
+    index=list(COUNTRIES.keys()).index('Peru'),
+    help="Choose the country to verify plates for"
+)
+country_code = COUNTRIES[selected_country]
+api_url = get_api_url(country_code)
 
 # Input method selection
 input_method = st.radio("How do you want to input plates?", ["Single plate", "Upload Excel file"], horizontal=True)
@@ -232,7 +258,7 @@ if plates_to_verify:
         for i, plate in enumerate(plates_to_verify):
             status_text.text(f"Verifying {i+1}/{len(plates_to_verify)}: {plate}")
             is_debug = len(plates_to_verify) == 1
-            result = verify_plate(session, plate, debug=is_debug)
+            result = verify_plate(session, plate, api_url, debug=is_debug)
             results.append(result)
             progress_bar.progress((i + 1) / len(plates_to_verify))
 
