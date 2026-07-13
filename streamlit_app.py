@@ -155,6 +155,29 @@ def verify_plate(session, plate_number, api_url, debug=False):
     return row
 
 
+def normalize_vehicle_string(text):
+    """Normalize vehicle string for comparison (lowercase, strip whitespace)."""
+    return text.lower().strip() if text else ""
+
+def check_vehicle_match(expected_vehicle, api_brand, api_model):
+    """Check if expected vehicle matches API response (case-insensitive)."""
+    if not expected_vehicle:
+        return "No data"
+
+    expected_norm = normalize_vehicle_string(expected_vehicle)
+    api_combined = normalize_vehicle_string(f"{api_brand} {api_model}".strip())
+    api_brand_norm = normalize_vehicle_string(api_brand)
+
+    # Check if expected vehicle matches API response (case-insensitive)
+    if expected_norm == api_combined:
+        return "Match"
+    elif expected_norm in api_combined or api_combined in expected_norm:
+        return "Partial Match"
+    elif api_brand_norm and api_brand_norm in expected_norm:
+        return "Partial Match"
+    else:
+        return "Mismatch"
+
 def create_excel_output(rows, plates, uploaded_file=None):
     """Create or append results to Excel file."""
     if uploaded_file:
@@ -212,6 +235,7 @@ api_url = get_api_url(country_code)
 input_method = st.radio("How do you want to input plates?", ["Single plate", "Upload Excel file"], horizontal=True)
 
 plates_to_verify = []
+vehicle_data = {}
 source_file = None
 
 if input_method == "Single plate":
@@ -226,23 +250,38 @@ else:
             wb = openpyxl.load_workbook(uploaded_file)
             ws = wb.active
 
-            # Show preview and let user select column
+            # Show preview and let user select columns
             preview_data = list(ws.iter_rows(min_row=1, max_row=5, values_only=True))
             st.write("**Preview (first 5 rows):**")
             st.dataframe(preview_data)
 
-            col_letter = st.selectbox("Select column with plate numbers",
-                                     ["A", "B", "C", "D", "E", "F"],
-                                     help="Choose the column containing plate numbers")
-            col_index = ord(col_letter) - ord('A')  # Convert A->0, B->1, C->2, etc.
+            col1, col2 = st.columns(2)
+            with col1:
+                plate_col_letter = st.selectbox("Select column with plate numbers",
+                                         ["A", "B", "C", "D", "E", "F"],
+                                         help="Choose the column containing plate numbers",
+                                         key="plate_col")
+            with col2:
+                vehicle_col_letter = st.selectbox("Select column with vehicle info (Brand Model)",
+                                            ["A", "B", "C", "D", "E", "F"],
+                                            help="Choose the column containing vehicle brand and model",
+                                            index=1,
+                                            key="vehicle_col")
+
+            plate_col_index = ord(plate_col_letter) - ord('A')
+            vehicle_col_index = ord(vehicle_col_letter) - ord('A')
 
             for row in ws.iter_rows(min_row=2, max_row=ws.max_row, values_only=True):
-                if row and len(row) > col_index and row[col_index]:
-                    plate = str(row[col_index]).strip().replace("-", "").upper()
+                if row and len(row) > plate_col_index and row[plate_col_index]:
+                    plate = str(row[plate_col_index]).strip().replace("-", "").upper()
                     if plate:
                         plates_to_verify.append(plate)
+                        # Store expected vehicle info if column is available
+                        if len(row) > vehicle_col_index and row[vehicle_col_index]:
+                            vehicle_data[plate] = str(row[vehicle_col_index]).strip()
+
             wb.close()
-            st.success(f"✅ Loaded {len(plates_to_verify)} plates from column {col_letter}")
+            st.success(f"✅ Loaded {len(plates_to_verify)} plates from column {plate_col_letter}")
         except Exception as e:
             st.error(f"Error reading file: {e}")
             st.stop()
@@ -285,6 +324,14 @@ if plates_to_verify:
                 "Engine Serial": row.get('Engine Serial', ''),
                 "Chassis Serial": row.get('Chassis Serial', ''),
             }
+
+            # Add match status if vehicle data was provided
+            if vehicle_data:
+                expected_vehicle = vehicle_data.get(plate, '')
+                match_status = check_vehicle_match(expected_vehicle, row.get('Brand', ''), row.get('Model', ''))
+                display_row["Expected Vehicle"] = expected_vehicle
+                display_row["Match Status"] = match_status
+
             display_df.append(display_row)
 
         st.dataframe(display_df, use_container_width=True, height=25 + (len(display_df) * 35))
@@ -298,6 +345,26 @@ if plates_to_verify:
         col1.metric("Found", found)
         col2.metric("Not Found", not_found)
         col3.metric("Errors", errors)
+
+        # Match summary if vehicle data was provided
+        if vehicle_data:
+            st.subheader("Vehicle Match Summary")
+            matches = sum(1 for d in display_df if d.get("Match Status") == "Match")
+            partial_matches = sum(1 for d in display_df if d.get("Match Status") == "Partial Match")
+            mismatches = sum(1 for d in display_df if d.get("Match Status") == "Mismatch")
+            no_data = sum(1 for d in display_df if d.get("Match Status") == "No data")
+
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Match", matches)
+            col2.metric("Partial Match", partial_matches)
+            col3.metric("Mismatch", mismatches)
+            col4.metric("No Data", no_data)
+
+            # Show mismatches and no data
+            if mismatches > 0 or no_data > 0:
+                st.subheader("⚠️ Issues Found")
+                issues_df = [d for d in display_df if d.get("Match Status") in ["Mismatch", "No data"]]
+                st.dataframe(issues_df, use_container_width=True, height=25 + (len(issues_df) * 35))
 
         # Download button
         excel_file = create_excel_output(results, plates_to_verify, uploaded_file=source_file)
