@@ -38,17 +38,12 @@ REQUEST_TIMEOUT = 30
 DELAY_BETWEEN_CALLS = 0.5  # seconds
 
 COUNTRIES = {
-    'Argentina': 'ar',
-    'Bolivia': 'bo',
-    'Brazil': 'br',
-    'Chile': 'cl',
-    'Colombia': 'co',
-    'Costa Rica': 'cr',
-    'Ecuador': 'ec',
-    'Mexico': 'mx',
-    'Paraguay': 'py',
     'Peru': 'pe',
-    'United States': 'us',
+    'Colombia': 'co',
+    'Chile': 'cl',
+    'Argentina': 'ar',
+    'Brazil': 'br',
+    'Ecuador': 'ec',
 }
 
 def get_api_url(country_code):
