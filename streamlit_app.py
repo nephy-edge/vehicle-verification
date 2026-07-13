@@ -199,10 +199,11 @@ else:
             source_file = uploaded_file
             wb = openpyxl.load_workbook(uploaded_file)
             ws = wb.active
-            for row in ws.iter_rows(min_row=2, values_only=True):
-                if row and row[0]:
+            for row in ws.iter_rows(min_row=2, max_row=ws.max_row, values_only=True):
+                if row[0]:
                     plate = str(row[0]).strip().replace("-", "").upper()
-                    plates_to_verify.append(plate)
+                    if plate:
+                        plates_to_verify.append(plate)
             wb.close()
             st.success(f"✅ Loaded {len(plates_to_verify)} plates")
         except Exception as e:
