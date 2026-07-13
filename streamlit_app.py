@@ -99,6 +99,7 @@ def verify_plate(session, plate_number, api_url, debug=False):
 
     if debug:
         st.write(f"**Debug:** Sending plate: `{plate_number}`")
+        st.write(f"**Debug:** API URL: `{api_url}`")
 
     try:
         resp = session.get(
@@ -115,13 +116,18 @@ def verify_plate(session, plate_number, api_url, debug=False):
         return row
     except requests.exceptions.ConnectionError as e:
         error_msg = str(e)
+        if debug:
+            st.write(f"**Debug:** Connection Error: {error_msg}")
         if 'Max retries exceeded' in error_msg:
             row['Result'] = 'Connection failed'
         else:
             row['Result'] = 'Connection error'
         return row
     except requests.RequestException as e:
-        row['Result'] = f'Error: {str(e)[:40]}'
+        error_msg = str(e)
+        if debug:
+            st.write(f"**Debug:** Request Error: {error_msg}")
+        row['Result'] = f'Error: {error_msg[:40]}'
         return row
 
     if resp.status_code == 200:
