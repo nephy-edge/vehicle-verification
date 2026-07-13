@@ -215,7 +215,6 @@ else:
                     plate = str(row[col_index]).strip().replace("-", "").upper()
                     if plate:
                         plates_to_verify.append(plate)
->>>>>>> 5e89e183cc1076cab03deab7f27ba8f8418ff859
             wb.close()
             st.success(f"✅ Loaded {len(plates_to_verify)} plates from column {col_letter}")
         except Exception as e:
